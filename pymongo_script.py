@@ -10,7 +10,6 @@ import sys
 db_location = 'localhost:27017'
 client = MongoClient(db_location)
 db = client.hw2
-db.factbook.insert()
 
 def open_url_split_response(url):
     with urllib.request.urlopen(url) as response:
@@ -62,5 +61,6 @@ for json_path in json_region_dirs:
         json_data = jso_file_pointer.read()
         jso_file_pointer.close()
         os.remove(file_name)
+        db.factbook.insert(json_data)
         # print to see what we got
         sys.stdout.buffer.write(json_data)
