@@ -6,11 +6,31 @@ import json
 import pprint
 import codecs
 import sys
+import copy
 
 db_location = 'localhost:27017'
 client = MongoClient(db_location)
 db = client.hw2
 error_array = []
+bad_keys_array=[]
+
+def clean_key_field(json_data, dict_copy):
+    deleted_keys = []
+    for key,value in list(json_data.items()):
+        if key.find(".")>=0:
+            deleted_keys.append(key)
+            clean_key_array = key.split(".")
+            new_key = "".join(clean_key_array)
+            dict_copy[new_key]=copy.deepcopy(value)
+            if key in dict_copy:
+                del dict_copy[key]
+            if isinstance(value,dict):
+                deleted_keys = deleted_keys + clean_key_field(value,dict_copy[new_key])
+        else:
+            dict_copy[key]=copy.deepcopy(value)
+            if isinstance(value,dict):
+                deleted_keys = deleted_keys + clean_key_field(value,dict_copy[key])
+    return deleted_keys
 
 def open_url_split_response(url):
     with urllib.request.urlopen(url) as response:
@@ -72,15 +92,20 @@ for json_path in json_region_dirs:
         github_raw_base = "https://raw.githubusercontent.com"
         repo_name = "/opendatajson/factbook.json"
         raw_github_url = github_raw_base + repo_name +  json_path
-        print("GETTING URL: " + raw_github_url)
+        #print("GETTING URL: " + raw_github_url)
         data = urllib.request.urlopen(raw_github_url).read().decode()
         json_data = json.loads(data)
+        clean_jso = {}
+        bad_key = clean_key_field(json_data,clean_jso)
+        if len(bad_key)>0:
+            bad_keys_array.append(bad_key)
         # PERFORM INSERT OPERATION TO THE DATABASE
         try:
-            id_str = db.factbook.insert_one(json_data).inserted_id
-            print(id_str)
-        except:
-            err_msg = "ERROR: Could not insert object for json from " + raw_github_url +"\n" + str(sys.exc_info()[0])
+            db.factbook.insert(clean_jso)
+            print("SUCCESS: INSERTED FOR " + raw_github_url)
+        except Exception as e:
+            err_msg = "ERROR: Could not insert object for json from " + raw_github_url +"\n" + str(e)
+            print("ARE THE DICT EQUAL:" + str(clean_jso==json_data))
             print(err_msg)
             error_array.append(err_msg)
 
@@ -89,3 +114,6 @@ print("No. Failed inserts:" + str(len(error_array)))
 print("Displaying failed inserts...\n")
 for err in error_array:
     print(err)
+print("BAD KEYS ENCOUNTERED: [CONTAINS '.']")
+for i in bad_keys_array:
+    print(i)
