@@ -10,6 +10,7 @@ import sys
 db_location = 'localhost:27017'
 client = MongoClient(db_location)
 db = client.hw2
+error_array = []
 
 def open_url_split_response(url):
     with urllib.request.urlopen(url) as response:
@@ -34,33 +35,57 @@ for json_path in json_region_dirs:
     suffix = json_path.lstrip("href=")[1:-1]
     json_url = github_prefix + suffix
     json_name = suffix.split("/")[-1]
-#    print("GET://   json_url : " + json_url + " \tjson_name: " + json_name)
+    print("__________________________________________________________________________________")
+    print("GET://   json_url : " + json_url + " json_name: " + json_name)
+    print("__________________________________________________________________________________")
     html_lines = open_url_split_response(json_url)
-    json_terminal_dirs = filter(lambda x: x.find("/master/" + json_name + "/")>=0 and x.find(".json")>=0, html_lines)  # if href string is found
-    json_terminal_dirs = list(json_terminal_dirs)
+    # build regex, inserting the parent continent name var into regex path
+    regex = r"[/]master[/]" + re.escape(json_name) + r"[/]\w+[.]json"
+    regex = re.compile(regex)
+    json_terminal_dirs = []
+    for line in html_lines:
+        matching_str_list = re.findall(regex,line)
+        if(len(matching_str_list) > 0):
+            for match in matching_str_list:
+                json_terminal_dirs.append(match)
+    # ALTERNATE FILTER: NOT AS EFFECTIVE
+    #json_terminal_dirs = filter(lambda x: x.find("/master/" + json_name + "/")>=0 and x.find(".json")>=0, html_lines)  # if href string is found
+    print("REGEX FOUND A JSON HREF FILE PATH:")
+    print("--------------------------------------------------------------------------------------------")
+    for i in json_terminal_dirs:
+        print(i)
+    print("---------------------------------------------------------------------------------------------")
+
+    ### ABANDONED CODE SNIPPET
+    '''
     ## GET LINKS TO THE JSON FILES FOR CURRENT REGIONAL DIRECTORY
     for i in range(len(json_terminal_dirs)):
         html_tag_contents = re.split('< | > | ',json_terminal_dirs[i].strip())
         for tag_content in html_tag_contents:
             if(tag_content.find("href")>=0):
                 json_terminal_dirs[i] = tag_content
+    '''
+
     ## FOR EACH JSON FILE LINK, CONVER TO RAW GITHUB URL AND DOWNLOAD
-    for json_file in json_terminal_dirs:
-        json_path = json_file.strip("href=")[1:-1].split("/")
-        file_name = json_path[-1]
-        # remove extra tokens that are not relevant
-        json_path.remove("blob")
-        json_path.remove("")
-        # rebuild the path, for raw github download
-        json_path = "/".join(json_path)
-        raw_github_url = "https://raw.githubusercontent.com/" + json_path
-        # download the file and save it to directory at file_name
-        urllib.request.urlretrieve(raw_github_url, file_name)
-        # open file, read its data, then remove the file.
-        jso_file_pointer = open(file_name,'rb')
-        json_data = jso_file_pointer.read()
-        jso_file_pointer.close()
-        os.remove(file_name)
-        db.factbook.insert(json_data)
-        # print to see what we got
-        sys.stdout.buffer.write(json_data)
+    for json_path in json_terminal_dirs:
+        file_name = json_path.split("/")[-1]
+        github_raw_base = "https://raw.githubusercontent.com"
+        repo_name = "/opendatajson/factbook.json"
+        raw_github_url = github_raw_base + repo_name +  json_path
+        print("GETTING URL: " + raw_github_url)
+        data = urllib.request.urlopen(raw_github_url).read().decode()
+        json_data = json.loads(data)
+        # PERFORM INSERT OPERATION TO THE DATABASE
+        try:
+            id_str = db.factbook.insert_one(json_data).inserted_id
+            print(id_str)
+        except:
+            err_msg = "ERROR: Could not insert object for json from " + raw_github_url +"\n" + str(sys.exc_info()[0])
+            print(err_msg)
+            error_array.append(err_msg)
+
+print("FINISHED INSERTING TO MONGODB")
+print("No. Failed inserts:" + str(len(error_array)))
+print("Displaying failed inserts...\n")
+for err in error_array:
+    print(err)
